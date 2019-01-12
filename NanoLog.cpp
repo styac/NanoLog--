@@ -28,7 +28,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <chrono>
 #include <ctime>
 #include <tuple>
-#include <atomic>
 #include <queue>
 #include <fstream>
 #include <iostream>
@@ -41,28 +40,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 // --------------------------------------------------------------------
 
-// #define USE_NANOSEC
-
-// TODO: dec, hex, nano/microsec time
-// QString ? need UTF16-> UTF8
-// sse?
-
+#define USE_NANOSEC
 
 namespace
 {
-
-uint64_t nsleep( uint64_t nsec, uint64_t sec=0 )
-{
-    timespec req;
-    timespec rem;
-    req.tv_nsec = nsec;
-    req.tv_sec = sec;
-    auto res = nanosleep(&req,&rem);
-    if( res == -1 && errno == EINTR ) {
-        return rem.tv_nsec + rem.tv_sec * 1000 * 1000 * 1000L;
-    }
-    return 0;
-}
     
 inline std::thread::id this_thread_id()
 {    
@@ -70,39 +51,28 @@ inline std::thread::id this_thread_id()
     return id;
 }
 
-/* Returns microseconds since epoch */
 inline uint64_t timestamp_now()
 {
-#ifdef USE_NANOSEC
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-#else
-    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-#endif
 }
 
-/* I want [2016-10-13 00:01:23.528514] */
 inline void format_timestamp(std::ostream & os, uint64_t timestamp)
 {
-#ifdef USE_NANOSEC
     constexpr uint32_t time2sec = 1000*1000*1000;
-    constexpr const char * const frac_time_format = "%09u]";
-#else
-    constexpr uint32_t time2sec = 1000*1000;
-    constexpr const char * const frac_time_format = "%06u]";
-#endif
     char buffer[32];
     const std::time_t time_t = timestamp / time2sec;
     const uint32_t frac_time = timestamp % time2sec;
     const auto gmtime = std::gmtime(&time_t);
     // 012345678901234567890123456789
-    // [2018-12-30 14:38:27.uuuuuu]
+    // [2018-12-30 14:38:27.uuuuuuuuu]
     std::strftime(buffer, 22, "[%F %T.", gmtime);
-    sprintf(&buffer[21], frac_time_format, frac_time);
+    sprintf(&buffer[21],  "%09u]", frac_time);
     os << buffer;
 }
 
-std::atomic < unsigned int > m_loglevel = {0};
-std::atomic < unsigned int > m_logformat  = {0};
+std::atomic < unsigned int >    m_loglevel  = {0};
+std::atomic < unsigned int >    m_logformat = {0};
+nanolog::module_mask_t          m_mask;
 
 template < typename T, typename Tuple >
 struct TupleIndex;
@@ -121,8 +91,25 @@ struct TupleIndex < T, std::tuple < U, Types... > >
 
 } // anonymous namespace
 
+// -----------------------------------------------
+
 namespace nanolog
 {
+
+void set_module_log(module_mask_t::value_type mask)
+{
+    m_mask.set(mask);
+}
+
+void add_module_log(module_mask_t::value_type mask)
+{
+    m_mask.add(mask);    
+}
+
+void sub_module_log(module_mask_t::value_type mask)
+{
+    m_mask.sub(mask);    
+}    
 
 typedef std::tuple < NanoLogLine::truncated_t,
     char, 
@@ -136,8 +123,8 @@ typedef std::tuple < NanoLogLine::truncated_t,
     double, 
     NanoLogLine::string_literal_t, 
     char *,
-    void * 
-    > SupportedTypes;
+    NanoLogLine::dumpbytes_t,
+    void * > SupportedTypes;
 
 inline char const * to_string(LogLevel loglevel)
 {
@@ -161,6 +148,46 @@ void NanoLogLine::encode(Arg arg)
     m_bytes_used += sizeof(Arg);
 }
 
+#ifdef TRUNCATE_LONG
+
+template < typename Arg >
+void NanoLogLine::encode(Arg arg, uint8_t type_id)
+{
+    if( resize_buffer_if_needed(sizeof(Arg) + sizeof(uint8_t)) )
+    {        
+        encode < uint8_t >(type_id);
+        encode < Arg >(arg);
+    }
+    else // truncate
+    {
+        auto type_id = TupleIndex < truncated_t, SupportedTypes >::value;
+        encode < uint8_t >(type_id);
+    }
+}
+
+NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line)
+: m_timestamp(timestamp_now())
+, m_file(file)
+, m_function(function) 
+, m_thread_id(this_thread_id())
+, m_line(line)
+, m_bytes_used(0)
+, m_loglevel(level)
+{
+}
+
+NanoLogLine::NanoLogLine()
+: m_timestamp()
+, m_file("")
+, m_function("") 
+, m_thread_id()
+, m_line()
+, m_bytes_used(0)
+, m_loglevel(LogLevel::NONE)
+{}
+
+#else
+
 template < typename Arg >
 void NanoLogLine::encode(Arg arg, uint8_t type_id)
 {
@@ -179,8 +206,7 @@ NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * functio
 , m_thread_id(this_thread_id())
 , m_line(line)
 , m_loglevel(level)
-{
-}
+{}
 
 NanoLogLine::NanoLogLine()
 : m_bytes_used(0)
@@ -194,9 +220,15 @@ NanoLogLine::NanoLogLine()
 , m_loglevel(LogLevel::NONE)
 {}
 
+#endif
+
 void NanoLogLine::stringify(std::ostream & os) 
 {
+#ifdef TRUNCATE_LONG
+    char * b = m_stack_buffer;
+#else
     char * b = !m_heap_buffer ? m_stack_buffer : m_heap_buffer.get();
+#endif    
     char const * const end = b + m_bytes_used;
     auto format = m_logformat.load(std::memory_order_acquire);
     
@@ -240,11 +272,25 @@ char * decode(std::ostream & os, char * b, NanoLogLine::string_literal_t * dummy
     return b + sizeof(NanoLogLine::string_literal_t);
 }
 
+// dump bytes in hex
+template <>
+char * decode(std::ostream & os, char * b, NanoLogLine::dumpbytes_t * dummy)
+{
+    static char hexc[] = { '0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F' };    
+    uint8_t length = *b;
+    for(auto i=0u; i<length; ++i)
+    {
+        uint8_t byte = *(++b);
+        os << ' ' << (hexc[byte>>4]) << (hexc[byte&0x0F]);
+    }          
+    return ++b;
+}
+
 template <>
 char * decode(std::ostream & os, char * b, NanoLogLine::truncated_t * dummy)
 {
-    os << " <truncated";
-    return b;
+    os << " <TRUNCATED>";
+    return nullptr;
 }
 
 template <>
@@ -270,7 +316,7 @@ char * decode(std::ostream & os, char * b, void ** dummy)
 
 void NanoLogLine::stringify(std::ostream & os, char * start, char const * const end) const
 {
-    if (start == end)
+    if ((start == nullptr) || (start == end))
         return;
 
     int type_id = static_cast < int >(*start); start++;
@@ -313,32 +359,132 @@ void NanoLogLine::stringify(std::ostream & os, char * start, char const * const 
     case 12:
         stringify(os, decode(os, start, static_cast<std::tuple_element<12, SupportedTypes>::type*>(nullptr)), end);
         return;
+    case 13:
+        stringify(os, decode(os, start, static_cast<std::tuple_element<13, SupportedTypes>::type*>(nullptr)), end);
+        return;
     default:
+        // check potential corruption
         stringify(os, decode(os, start, static_cast<std::tuple_element<0, SupportedTypes>::type*>(nullptr)), end);
         return;
     }
 
-    static_assert( 12 == ( std::tuple_size<SupportedTypes>::value - 1 ), "FATAL: not implemented type" );
+    static_assert( 13 == ( std::tuple_size<SupportedTypes>::value - 1 ), "FATAL: not implemented type" );
 }
+
+
+#ifdef TRUNCATE_LONG
+
+void NanoLogLine::truncate(char * b)
+{
+    auto type_id = TupleIndex < truncated_t, SupportedTypes >::value;
+    *b = type_id;
+    m_bytes_used = m_buffer_size;
+}
+
+inline char * NanoLogLine::buffer()
+{
+    return &m_stack_buffer[m_bytes_used];
+}
+
+bool NanoLogLine::resize_buffer_if_needed(size_t additional_bytes)
+{
+    return m_bytes_used + additional_bytes <= m_buffer_size;
+}
+
+void NanoLogLine::encode_c_string(char const * arg, size_t length)
+{
+    if (length == 0)
+        return;
+
+    if( resize_buffer_if_needed(1 + length + 1) )
+    {        
+        char * b = buffer();
+        auto type_id = TupleIndex < char *, SupportedTypes >::value;
+        *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+        memcpy(b, arg, length + 1);
+        m_bytes_used += 1 + length + 1;
+    }
+    else // truncate
+    {
+        char * b = buffer();
+        int remaining_bytes = int(m_buffer_size) - int(m_bytes_used) - 4; // 2 token + \0
+        if( remaining_bytes > 0 )
+        {
+            auto type_id = TupleIndex < char *, SupportedTypes >::value;
+            *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+            length = std::min( int(length), remaining_bytes);
+            memcpy(b, arg, length); 
+            b += length;
+            *b++ = 0;
+            truncate(b);
+        }
+        else
+        {
+            truncate(b);
+        }
+    }
+}
+
+void NanoLogLine::encode(dumpbytes_t const& arg)
+{    
+    auto length = arg.size;
+    if (length == 0)
+        return;
+    if(length>128)
+    {
+       length=128; 
+    }
+    
+    if( resize_buffer_if_needed(1 + length + 1) )
+    {
+        char * b = buffer();
+        auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
+        *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+        *reinterpret_cast<uint8_t*>(b++) = uint8_t(length);
+        memcpy(b, arg.ptr, length);
+        m_bytes_used += 2 + length;
+    }
+    else
+    {        
+        char * b = buffer();
+        int remaining_bytes = int(m_buffer_size) - int(m_bytes_used) - 3; // 2 token + length
+        if( remaining_bytes > 0 )
+        {
+            auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
+            *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+            length = std::min( int(length), remaining_bytes);
+            *reinterpret_cast<uint8_t*>(b++) = uint8_t(length);
+            memcpy(b, arg.ptr, length); 
+            b += 2 + length;
+            truncate(b);
+        }
+        else
+        {
+            truncate(b);
+        }
+    }
+}
+
+#else // TRUNCATE_LONG
 
 inline char * NanoLogLine::buffer()
 {
     return !m_heap_buffer ? &m_stack_buffer[m_bytes_used] : &(m_heap_buffer.get())[m_bytes_used];
 }
 
-void NanoLogLine::resize_buffer_if_needed(size_t additional_bytes)
+bool NanoLogLine::resize_buffer_if_needed(size_t additional_bytes)
 {
     size_t const required_size = m_bytes_used + additional_bytes;
 
     if (required_size <= m_buffer_size)
-        return;
+        return true;
 
     if (!m_heap_buffer)
     {
         m_buffer_size = std::max(static_cast<size_t>(512), required_size);
         m_heap_buffer.reset(new char[m_buffer_size]);
         memcpy(m_heap_buffer.get(), m_stack_buffer, m_bytes_used);
-        return;
+        return true;
     }
     else
     {
@@ -347,7 +493,40 @@ void NanoLogLine::resize_buffer_if_needed(size_t additional_bytes)
         memcpy(new_heap_buffer.get(), m_heap_buffer.get(), m_bytes_used);
         m_heap_buffer.swap(new_heap_buffer);
     }
+    return true;
 }
+
+void NanoLogLine::encode_c_string(char const * arg, size_t length)
+{
+    if (length == 0)
+        return;
+    resize_buffer_if_needed(1 + length + 1);
+    char * b = buffer();
+    auto type_id = TupleIndex < char *, SupportedTypes >::value;
+    *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+    memcpy(b, arg, length + 1);
+    m_bytes_used += 1 + length + 1;
+}
+
+void NanoLogLine::encode(dumpbytes_t const& arg)
+{    
+    auto length = arg.size;
+    if (length == 0)
+        return;
+    if(length>128)
+    {
+       length=128; 
+    }
+    resize_buffer_if_needed(1 + length + 1);
+    char * b = buffer();
+    auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
+    *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+    *reinterpret_cast<uint8_t*>(b++) = uint8_t(length);
+    memcpy(b, arg.ptr, length);
+    m_bytes_used += 2 + length;
+}
+
+#endif
 
 void NanoLogLine::encode(char const * arg)
 {
@@ -359,19 +538,6 @@ void NanoLogLine::encode(char * arg)
 {
     if (arg != nullptr)
         encode_c_string(arg, std::strlen(arg));
-}
-
-void NanoLogLine::encode_c_string(char const * arg, size_t length)
-{
-    if (length == 0)
-        return;
-
-    resize_buffer_if_needed(1 + length + 1);
-    char * b = buffer();
-    auto type_id = TupleIndex < char *, SupportedTypes >::value;
-    *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
-    memcpy(b, arg, length + 1);
-    m_bytes_used += 1 + length + 1;
 }
 
 void NanoLogLine::encode(string_literal_t arg)
@@ -442,6 +608,12 @@ NanoLogLine& NanoLogLine::operator<<(char arg)
 NanoLogLine& NanoLogLine::operator<<(void * arg)
 {
     encode < void * >(arg, TupleIndex < void *, SupportedTypes >::value);
+    return *this;
+}
+
+NanoLogLine& NanoLogLine::operator<<(dumpbytes_t const & arg)
+{
+    encode(arg);
     return *this;
 }
 
@@ -794,20 +966,17 @@ public:
 
     void pop()
     {
+        NanoLogLine logline;
         // Wait for constructor to complete and pull all stores done there to this thread / core.
         while (m_state.load(std::memory_order_acquire) == State::INIT)
-//            std::this_thread::sleep_for(std::chrono::microseconds(50));
-            nsleep(50000);
-
-        NanoLogLine logline(LogLevel::INFO, nullptr, nullptr, 0);
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
 
         while (m_state.load() == State::READY)
         {
             if (m_buffer_base->try_pop(logline))
                 m_file_writer.write(logline);
             else
-//                std::this_thread::sleep_for(std::chrono::microseconds(50));
-              nsleep(50000);
+              std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
 
         // Pop and log all remaining entries
@@ -864,9 +1033,10 @@ void set_log_format(LogFormat mode)
     m_logformat.store(static_cast<unsigned int>(mode), std::memory_order_release);    
 }
 
-bool is_logged(LogLevel level)
+bool is_logged(LogLevel level, module_mask_t::value_type mask)
 {
-    return static_cast<unsigned int>(level) >= m_loglevel.load(std::memory_order_relaxed);
+    return (static_cast<unsigned int>(level) >= m_loglevel.load(std::memory_order_relaxed)) &&
+            m_mask.is_set(mask);
 }
 
 } // namespace nanologger

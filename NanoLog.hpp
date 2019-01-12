@@ -30,6 +30,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <iosfwd>
 #include <type_traits>
 #include <thread>
+#include <atomic>
+
+// do not allocate heap buffer
+// #define TRUNCATE_LONG
 
 namespace nanolog
 {
@@ -40,9 +44,9 @@ enum class LogLevel : uint8_t
     INFO,
     WARN,
     CRIT,
-// SKIPPED internal is non-garanted skipped a msg
+// SKIPPED: internal; non-garanted skipped a msg
     SKIPPED,
-// NONE is the highest -- disable logging
+// NONE: internal; disable logging
     NONE
 };
 
@@ -55,13 +59,55 @@ enum LogFormat : uint8_t
     LF_ALL         = 0xFF
 };
 
+// 64 user level module id
+struct module_mask_t
+{
+    module_mask_t()
+    : m_mask(-1LL) // all modules enabled
+    {}
+    
+    typedef uint64_t value_type;
+    
+    void set(value_type val)
+    {
+        m_mask.store(val, std::memory_order_relaxed);
+    }
+    
+    void add(value_type val)
+    {
+        m_mask |= val;
+    }
+
+    void sub(value_type val)
+    {
+        m_mask &= ~val;
+    }
+
+    value_type get() const
+    {
+        return m_mask.load(std::memory_order_acquire);
+    }
+
+    bool is_set( value_type val ) const
+    {
+        return m_mask.load(std::memory_order_acquire) & val;
+    }
+    std::atomic < value_type > m_mask;
+};
+
 constexpr size_t LINEBUFFER_SIZE = 256;
 
 void set_log_level(LogLevel level);
 
 void set_log_format(LogFormat format);
 
-bool is_logged(LogLevel level);
+void set_module_log(module_mask_t::value_type mask);
+
+void add_module_log(module_mask_t::value_type mask);
+
+void sub_module_log(module_mask_t::value_type mask);
+
+bool is_logged(LogLevel level, module_mask_t::value_type mask=-1LL);
 
 class NanoLogLine final
 {
@@ -73,6 +119,16 @@ public:
     NanoLogLine(NanoLogLine &&) = default;
     NanoLogLine& operator=(NanoLogLine &&) = default;
 
+    struct dumpbytes_t
+    {
+        dumpbytes_t(void * p, size_t l)
+        : ptr(p)
+        , size(l)
+        {}
+        void *ptr;
+        size_t size;
+    };
+        
     void stringify(std::ostream & os);
 
     NanoLogLine& operator<<(char arg);
@@ -85,8 +141,7 @@ public:
     NanoLogLine& operator<<(float arg);
     NanoLogLine& operator<<(double arg);
     NanoLogLine& operator<<(void * arg);
-    
-    // MUST NOT CONTAIN \0
+    NanoLogLine& operator<<(dumpbytes_t const & arg);        
     NanoLogLine& operator<<(std::string const & arg);
 
     template < size_t N >
@@ -121,11 +176,16 @@ public:
     
     struct truncated_t
     {};
-    
+            
     void set_skipped()
     {
         m_loglevel = LogLevel::SKIPPED;
     }
+    uint64_t get_timestamp() const
+    {
+        return m_timestamp;
+    }
+    
 private:
     char * buffer();
 
@@ -139,9 +199,37 @@ private:
     void encode(char const * arg);
     void encode(string_literal_t arg);
     void encode_c_string(char const * arg, size_t length);
-    void resize_buffer_if_needed(size_t additional_bytes);
+    void encode(dumpbytes_t const& arg);
+    bool resize_buffer_if_needed(size_t additional_bytes);
     void stringify(std::ostream & os, char * start, char const * const end) const;
+    
+#ifdef TRUNCATE_LONG
 
+    void truncate(char * b);
+
+    uint64_t            m_timestamp;
+    string_literal_t    m_file;
+    string_literal_t    m_function;    
+    std::thread::id     m_thread_id;
+    uint32_t            m_line;
+    uint8_t             m_bytes_used;
+    LogLevel            m_loglevel;
+
+    char m_stack_buffer[ LINEBUFFER_SIZE
+        - sizeof(m_bytes_used)
+        - sizeof(m_timestamp)
+        - sizeof(m_file)
+        - sizeof(m_function)
+        - sizeof(m_thread_id)    
+        - sizeof(m_line)
+        - sizeof(m_loglevel)
+        - 8 /* Reserved */
+    ];
+            
+    static constexpr size_t  m_buffer_size = sizeof(m_stack_buffer);
+    
+#else
+        
     uint32_t            m_bytes_used;
     uint32_t            m_buffer_size;
     std::unique_ptr < char [] > m_heap_buffer;
@@ -164,6 +252,8 @@ private:
         - sizeof(m_loglevel)
         - 8 /* Reserved */
     ];
+#endif
+    
 };
 
 struct NanoLog final
@@ -209,12 +299,26 @@ void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std:
 
 } // namespace nanolog
 
+//
+// dump the value of any type in hex
+// struct XXX {...} xxx; 
+// LOG_TRACE << "xxx: " << LOG_DUMPHEX(xxx)
+//
+
+#define LOG_DUMPHEX(V) nanolog::NanoLogLine::dumpbytes_t(std::addressof(V),sizeof(V))
+
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
 #define LOG_DEBUG nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG)
 #define LOG_TRACE nanolog::is_logged(nanolog::LogLevel::TRACE) && NANO_LOG(nanolog::LogLevel::TRACE)
-#define LOG_INFO nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO)
-#define LOG_WARN nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN)
-#define LOG_CRIT nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT)
+#define LOG_INFO  nanolog::is_logged(nanolog::LogLevel::INFO)  && NANO_LOG(nanolog::LogLevel::INFO)
+#define LOG_WARN  nanolog::is_logged(nanolog::LogLevel::WARN)  && NANO_LOG(nanolog::LogLevel::WARN)
+#define LOG_CRIT  nanolog::is_logged(nanolog::LogLevel::CRIT)  && NANO_LOG(nanolog::LogLevel::CRIT)
+
+#define LOG_M_DEBUG(mask) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG(nanolog::LogLevel::DEBUG)
+#define LOG_M_TRACE(mask) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG(nanolog::LogLevel::TRACE)
+#define LOG_M_INFO(mask)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG(nanolog::LogLevel::INFO)
+#define LOG_M_WARN(mask)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG(nanolog::LogLevel::WARN)
+#define LOG_M_CRIT(mask)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG(nanolog::LogLevel::CRIT)
 
 #endif /* NANO_LOG_HEADER_GUARD */
 
