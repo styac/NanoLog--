@@ -40,8 +40,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 // --------------------------------------------------------------------
 
-#define USE_NANOSEC
-
 namespace
 {
     
@@ -148,7 +146,7 @@ void NanoLogLine::encode(Arg arg)
     m_bytes_used += sizeof(Arg);
 }
 
-#ifdef TRUNCATE_LONG
+#ifdef TRUNCATE_LONG_LINES
 
 template < typename Arg >
 void NanoLogLine::encode(Arg arg, uint8_t type_id)
@@ -186,7 +184,7 @@ NanoLogLine::NanoLogLine()
 , m_loglevel(LogLevel::NONE)
 {}
 
-#else
+#else // TRUNCATE_LONG_LINES
 
 template < typename Arg >
 void NanoLogLine::encode(Arg arg, uint8_t type_id)
@@ -220,15 +218,15 @@ NanoLogLine::NanoLogLine()
 , m_loglevel(LogLevel::NONE)
 {}
 
-#endif
+#endif // TRUNCATE_LONG_LINES
 
 void NanoLogLine::stringify(std::ostream & os) 
 {
-#ifdef TRUNCATE_LONG
+#ifdef TRUNCATE_LONG_LINES
     char * b = m_stack_buffer;
-#else
+#else // TRUNCATE_LONG_LINES
     char * b = !m_heap_buffer ? m_stack_buffer : m_heap_buffer.get();
-#endif    
+#endif // TRUNCATE_LONG_LINES
     char const * const end = b + m_bytes_used;
     auto format = m_logformat.load(std::memory_order_acquire);
     
@@ -372,7 +370,7 @@ void NanoLogLine::stringify(std::ostream & os, char * start, char const * const 
 }
 
 
-#ifdef TRUNCATE_LONG
+#ifdef TRUNCATE_LONG_LINES
 
 void NanoLogLine::truncate(char * b)
 {
@@ -465,7 +463,7 @@ void NanoLogLine::encode(dumpbytes_t const& arg)
     }
 }
 
-#else // TRUNCATE_LONG
+#else // TRUNCATE_LONG_LINES
 
 inline char * NanoLogLine::buffer()
 {
@@ -526,7 +524,7 @@ void NanoLogLine::encode(dumpbytes_t const& arg)
     m_bytes_used += 2 + length;
 }
 
-#endif
+#endif // TRUNCATE_LONG_LINES
 
 void NanoLogLine::encode(char const * arg)
 {
@@ -916,7 +914,7 @@ private:
         m_os.flush();
         m_os.close();
         m_bytes_written = 0;
-        auto filetime = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();     
+        auto filetime = timestamp_now();
         const std::time_t time_t = filetime / time2sec;
         const uint32_t frac_time = filetime % time2sec;
         const auto gmtime = std::gmtime(&time_t);

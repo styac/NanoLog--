@@ -33,7 +33,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 
 // do not allocate heap buffer
-// #define TRUNCATE_LONG
+// #define TRUNCATE_LONG_LINES
 
 namespace nanolog
 {
@@ -181,6 +181,7 @@ public:
     {
         m_loglevel = LogLevel::SKIPPED;
     }
+    
     uint64_t get_timestamp() const
     {
         return m_timestamp;
@@ -203,7 +204,7 @@ private:
     bool resize_buffer_if_needed(size_t additional_bytes);
     void stringify(std::ostream & os, char * start, char const * const end) const;
     
-#ifdef TRUNCATE_LONG
+#ifdef TRUNCATE_LONG_LINES
 
     void truncate(char * b);
 
@@ -228,7 +229,7 @@ private:
             
     static constexpr size_t  m_buffer_size = sizeof(m_stack_buffer);
     
-#else
+#else // TRUNCATE_LONG_LINES
         
     uint32_t            m_bytes_used;
     uint32_t            m_buffer_size;
@@ -252,7 +253,7 @@ private:
         - sizeof(m_loglevel)
         - 8 /* Reserved */
     ];
-#endif
+#endif // TRUNCATE_LONG_LINES
     
 };
 
