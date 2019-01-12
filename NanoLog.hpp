@@ -53,24 +53,30 @@ enum class LogLevel : uint8_t
 enum LogFormat : uint8_t
 {
     LF_NONE        = 0,
-    LF_DATE_TIME   = 0x01,
-    LF_THREAD      = 0x02,
-    LF_FILE_FUNC   = 0x04,
+    LF_DATE_TIME   = 1<<0,
+    LF_THREAD      = 1<<1,
+    LF_FILE_FUNC   = 1<<2,
     LF_ALL         = 0xFF
 };
 
-// 64 user level module id
-struct module_mask_t
+// 63 user categories to filter out
+// bit 64 "always" cannot be filtered out
+
+class category_mask_t
 {
-    module_mask_t()
+public:
+    typedef uint64_t value_type;
+    enum {
+        log_always = 1LL<53
+    };
+    
+    category_mask_t()
     : m_mask(-1LL) // all modules enabled
     {}
     
-    typedef uint64_t value_type;
-    
     void set(value_type val)
     {
-        m_mask.store(val, std::memory_order_relaxed);
+        m_mask.store(val | log_always, std::memory_order_relaxed);
     }
     
     void add(value_type val)
@@ -80,7 +86,7 @@ struct module_mask_t
 
     void sub(value_type val)
     {
-        m_mask &= ~val;
+        m_mask &= (~val) | log_always;
     }
 
     value_type get() const
@@ -92,6 +98,8 @@ struct module_mask_t
     {
         return m_mask.load(std::memory_order_acquire) & val;
     }
+    
+private:
     std::atomic < value_type > m_mask;
 };
 
@@ -101,18 +109,19 @@ void set_log_level(LogLevel level);
 
 void set_log_format(LogFormat format);
 
-void set_module_log(module_mask_t::value_type mask);
+void set_log_category(category_mask_t::value_type mask);
 
-void add_module_log(module_mask_t::value_type mask);
+void add_module_log(category_mask_t::value_type mask);
 
-void sub_module_log(module_mask_t::value_type mask);
+void sub_module_log(category_mask_t::value_type mask);
 
-bool is_logged(LogLevel level, module_mask_t::value_type mask=-1LL);
+bool is_logged(LogLevel level, category_mask_t::value_type mask=-1LL);
 
+// TODO category tag
 class NanoLogLine final
 {
 public:
-    NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line);
+    NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line, char const * category="");
     NanoLogLine(); // for init
     ~NanoLogLine()  = default;
 
@@ -121,14 +130,26 @@ public:
 
     struct dumpbytes_t
     {
+        dumpbytes_t() = delete;
         dumpbytes_t(void * p, size_t l)
         : ptr(p)
         , size(l)
         {}
-        void *ptr;
-        size_t size;
+        void const * ptr;
+        size_t const size;
     };
-        
+    
+    struct string_literal_t
+    {
+        string_literal_t() = delete;
+        explicit string_literal_t(char const * s)
+        : m_s(s) {}
+        char const * m_s;
+    };
+    
+    struct truncated_t
+    {};
+               
     void stringify(std::ostream & os);
 
     NanoLogLine& operator<<(char arg);
@@ -166,17 +187,7 @@ public:
         encode(arg);
         return *this;
     }
-
-    struct string_literal_t
-    {
-        explicit string_literal_t(char const * s)
-        : m_s(s) {}
-        char const * m_s;
-    };
-    
-    struct truncated_t
-    {};
-            
+     
     void set_skipped()
     {
         m_loglevel = LogLevel::SKIPPED;
@@ -187,6 +198,11 @@ public:
         return m_timestamp;
     }
     
+    uint8_t get_loglevel() const
+    {
+        return uint8_t(m_loglevel);
+    }
+
 private:
     char * buffer();
 
@@ -211,6 +227,7 @@ private:
     uint64_t            m_timestamp;
     string_literal_t    m_file;
     string_literal_t    m_function;    
+    string_literal_t    m_category;    
     std::thread::id     m_thread_id;
     uint32_t            m_line;
     uint8_t             m_bytes_used;
@@ -221,6 +238,7 @@ private:
         - sizeof(m_timestamp)
         - sizeof(m_file)
         - sizeof(m_function)
+        - sizeof(m_category)
         - sizeof(m_thread_id)    
         - sizeof(m_line)
         - sizeof(m_loglevel)
@@ -237,6 +255,7 @@ private:
     uint64_t            m_timestamp;
     string_literal_t    m_file;
     string_literal_t    m_function;    
+    string_literal_t    m_category;    
     std::thread::id     m_thread_id;
     uint32_t            m_line;
     LogLevel            m_loglevel;
@@ -248,6 +267,7 @@ private:
         - sizeof(m_timestamp)
         - sizeof(m_file)
         - sizeof(m_function)
+        - sizeof(m_category)
         - sizeof(m_thread_id)    
         - sizeof(m_line)
         - sizeof(m_loglevel)
@@ -308,18 +328,27 @@ void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std:
 
 #define LOG_DUMPHEX(V) nanolog::NanoLogLine::dumpbytes_t(std::addressof(V),sizeof(V))
 
+// add a Category id? macro
+
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
+#define NANO_LOG_CAT2(LEVEL,cat) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__,cat)
 #define LOG_DEBUG nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG)
 #define LOG_TRACE nanolog::is_logged(nanolog::LogLevel::TRACE) && NANO_LOG(nanolog::LogLevel::TRACE)
 #define LOG_INFO  nanolog::is_logged(nanolog::LogLevel::INFO)  && NANO_LOG(nanolog::LogLevel::INFO)
 #define LOG_WARN  nanolog::is_logged(nanolog::LogLevel::WARN)  && NANO_LOG(nanolog::LogLevel::WARN)
 #define LOG_CRIT  nanolog::is_logged(nanolog::LogLevel::CRIT)  && NANO_LOG(nanolog::LogLevel::CRIT)
 
-#define LOG_M_DEBUG(mask) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG(nanolog::LogLevel::DEBUG)
-#define LOG_M_TRACE(mask) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG(nanolog::LogLevel::TRACE)
-#define LOG_M_INFO(mask)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG(nanolog::LogLevel::INFO)
-#define LOG_M_WARN(mask)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG(nanolog::LogLevel::WARN)
-#define LOG_M_CRIT(mask)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG(nanolog::LogLevel::CRIT)
+#define LOG_DEBUG_CAT(mask) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG(nanolog::LogLevel::DEBUG)
+#define LOG_TRACE_CAT(mask) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG(nanolog::LogLevel::TRACE)
+#define LOG_INFO_CAT(mask)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG(nanolog::LogLevel::INFO)
+#define LOG_WARN_CAT(mask)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG(nanolog::LogLevel::WARN)
+#define LOG_CRIT_CAT(mask)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG(nanolog::LogLevel::CRIT)
+
+#define LOG_DEBUG_CAT2(mask,cat) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG_CAT2(nanolog::LogLevel::DEBUG,(cat))
+#define LOG_TRACE_CAT2(mask,cat) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG_CAT2(nanolog::LogLevel::TRACE,(cat))
+#define LOG_INFO_CAT2(mask,cat)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG_CAT2(nanolog::LogLevel::INFO,(cat))
+#define LOG_WARN_CAT2(mask,cat)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG_CAT2(nanolog::LogLevel::WARN,(cat))
+#define LOG_CRIT_CAT2(mask,cat)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG_CAT2(nanolog::LogLevel::CRIT,(cat))
 
 #endif /* NANO_LOG_HEADER_GUARD */
 

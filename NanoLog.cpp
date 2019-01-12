@@ -70,7 +70,7 @@ inline void format_timestamp(std::ostream & os, uint64_t timestamp)
 
 std::atomic < unsigned int >    m_loglevel  = {0};
 std::atomic < unsigned int >    m_logformat = {0};
-nanolog::module_mask_t          m_mask;
+nanolog::category_mask_t        m_category_mask;
 
 template < typename T, typename Tuple >
 struct TupleIndex;
@@ -94,19 +94,19 @@ struct TupleIndex < T, std::tuple < U, Types... > >
 namespace nanolog
 {
 
-void set_module_log(module_mask_t::value_type mask)
+void set_log_category(category_mask_t::value_type mask)
 {
-    m_mask.set(mask);
+    m_category_mask.set(mask);
 }
 
-void add_module_log(module_mask_t::value_type mask)
+void add_module_log(category_mask_t::value_type mask)
 {
-    m_mask.add(mask);    
+    m_category_mask.add(mask);    
 }
 
-void sub_module_log(module_mask_t::value_type mask)
+void sub_module_log(category_mask_t::value_type mask)
 {
-    m_mask.sub(mask);    
+    m_category_mask.sub(mask);    
 }    
 
 typedef std::tuple < NanoLogLine::truncated_t,
@@ -163,10 +163,11 @@ void NanoLogLine::encode(Arg arg, uint8_t type_id)
     }
 }
 
-NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line)
+NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line, char const * category)
 : m_timestamp(timestamp_now())
 , m_file(file)
 , m_function(function) 
+, m_category(category) 
 , m_thread_id(this_thread_id())
 , m_line(line)
 , m_bytes_used(0)
@@ -178,6 +179,7 @@ NanoLogLine::NanoLogLine()
 : m_timestamp()
 , m_file("")
 , m_function("") 
+, m_category("") 
 , m_thread_id()
 , m_line()
 , m_bytes_used(0)
@@ -194,13 +196,14 @@ void NanoLogLine::encode(Arg arg, uint8_t type_id)
     encode < Arg >(arg);
 }
 
-NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line)
+NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line, char const * category)
 : m_bytes_used(0)
 , m_buffer_size(sizeof(m_stack_buffer))
 , m_heap_buffer()
 , m_timestamp(timestamp_now())
 , m_file(file)
 , m_function(function) 
+, m_category(category) 
 , m_thread_id(this_thread_id())
 , m_line(line)
 , m_loglevel(level)
@@ -213,6 +216,7 @@ NanoLogLine::NanoLogLine()
 , m_timestamp()
 , m_file("")
 , m_function("") 
+, m_category("") 
 , m_thread_id()
 , m_line()
 , m_loglevel(LogLevel::NONE)
@@ -235,7 +239,10 @@ void NanoLogLine::stringify(std::ostream & os)
     {
         format_timestamp(os, m_timestamp);
     }    
-    os  << to_string(m_loglevel);
+    os << to_string(m_loglevel);
+    if( m_category.m_s[0] != 0 ) {
+        os << m_category.m_s << " ";        
+    }
     if( format & uint8_t(LogFormat::LF_THREAD) ) 
     {
         auto flags = os.flags();
@@ -685,6 +692,11 @@ public:
         unsigned int write_index = m_write_index.fetch_add(1, std::memory_order_relaxed) % m_size;
         Item & item = m_ring[write_index];
         SpinLock spinlock(item.flag);
+        if( ( item.written > 0 ) && (item.logline.get_loglevel() > logline.get_loglevel() ) ) 
+        {
+            // lower level should be dropped not overwrite !
+            return;
+        }
         item.logline = std::move(logline);
         ++item.written;
         if(item.written>100) {
@@ -1031,10 +1043,10 @@ void set_log_format(LogFormat mode)
     m_logformat.store(static_cast<unsigned int>(mode), std::memory_order_release);    
 }
 
-bool is_logged(LogLevel level, module_mask_t::value_type mask)
+bool is_logged(LogLevel level, category_mask_t::value_type mask)
 {
     return (static_cast<unsigned int>(level) >= m_loglevel.load(std::memory_order_relaxed)) &&
-            m_mask.is_set(mask);
+            m_category_mask.is_set(mask);
 }
 
 } // namespace nanologger
