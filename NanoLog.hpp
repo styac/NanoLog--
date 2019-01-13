@@ -111,9 +111,9 @@ void set_log_format(LogFormat format);
 
 void set_log_category(category_mask_t::value_type mask);
 
-void add_module_log(category_mask_t::value_type mask);
+void add_log_category(category_mask_t::value_type mask);
 
-void sub_module_log(category_mask_t::value_type mask);
+void sub_log_category(category_mask_t::value_type mask);
 
 bool is_logged(LogLevel level, category_mask_t::value_type mask=-1LL);
 

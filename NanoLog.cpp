@@ -99,12 +99,12 @@ void set_log_category(category_mask_t::value_type mask)
     m_category_mask.set(mask);
 }
 
-void add_module_log(category_mask_t::value_type mask)
+void add_log_category(category_mask_t::value_type mask)
 {
     m_category_mask.add(mask);    
 }
 
-void sub_module_log(category_mask_t::value_type mask)
+void sub_log_category(category_mask_t::value_type mask)
 {
     m_category_mask.sub(mask);    
 }    
