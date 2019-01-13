@@ -67,7 +67,7 @@ class category_mask_t
 public:
     typedef uint64_t value_type;
     enum {
-        log_always = 1LL<53
+        log_always = 1LL<<63
     };
     
     category_mask_t()
