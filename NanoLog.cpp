@@ -127,10 +127,11 @@ typedef std::tuple < NanoLogLine::truncated_t,
 inline char const * to_string(LogLevel loglevel)
 {
     static const char *str[] = {
-         " DBG ",
          " TRC ",
+         " DBG ",
          " INF ",
          " WRN ",
+         " ERR ",
          " CRT ",
          " SKIPPED ",
     };

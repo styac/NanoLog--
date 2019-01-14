@@ -39,12 +39,13 @@ namespace nanolog
 {
 enum class LogLevel : uint8_t
 {
-    DEBUG,
     TRACE,
+    DEBUG,
     INFO,
     WARN,
+    ERROR,
     CRIT,
-// SKIPPED: internal; non-garanted skipped a msg
+// SKIPPED: internal; non-garanted skipped a msg - maybe could be bit7
     SKIPPED,
 // NONE: internal; disable logging
     NONE
@@ -329,16 +330,19 @@ void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std:
 
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
 #define NANO_LOG_CAT(LEVEL,cat) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__,cat)
-#define LOG_DEBUG nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG)
+
 #define LOG_TRACE nanolog::is_logged(nanolog::LogLevel::TRACE) && NANO_LOG(nanolog::LogLevel::TRACE)
+#define LOG_DEBUG nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG)
 #define LOG_INFO  nanolog::is_logged(nanolog::LogLevel::INFO)  && NANO_LOG(nanolog::LogLevel::INFO)
 #define LOG_WARN  nanolog::is_logged(nanolog::LogLevel::WARN)  && NANO_LOG(nanolog::LogLevel::WARN)
+#define LOG_ERROR nanolog::is_logged(nanolog::LogLevel::ERROR) && NANO_LOG(nanolog::LogLevel::ERROR)
 #define LOG_CRIT  nanolog::is_logged(nanolog::LogLevel::CRIT)  && NANO_LOG(nanolog::LogLevel::CRIT)
 
-#define LOG_DEBUG_CAT(mask,cat) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG_CAT(nanolog::LogLevel::DEBUG,(cat))
 #define LOG_TRACE_CAT(mask,cat) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG_CAT(nanolog::LogLevel::TRACE,(cat))
+#define LOG_DEBUG_CAT(mask,cat) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG_CAT(nanolog::LogLevel::DEBUG,(cat))
 #define LOG_INFO_CAT(mask,cat)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG_CAT(nanolog::LogLevel::INFO,(cat))
 #define LOG_WARN_CAT(mask,cat)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG_CAT(nanolog::LogLevel::WARN,(cat))
+#define LOG_ERROR_CAT(mask,cat) nanolog::is_logged(nanolog::LogLevel::ERROR,mask) && NANO_LOG_CAT(nanolog::LogLevel::ERROR,(cat))
 #define LOG_CRIT_CAT(mask,cat)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG_CAT(nanolog::LogLevel::CRIT,(cat))
 
 #endif /* NANO_LOG_HEADER_GUARD */
