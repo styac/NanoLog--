@@ -172,8 +172,7 @@ NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * functio
 , m_line(line)
 , m_bytes_used(0)
 , m_loglevel(level)
-{
-}
+{}
 
 NanoLogLine::NanoLogLine()
 : m_timestamp()
@@ -312,11 +311,13 @@ char * decode(std::ostream & os, char * b, char ** dummy)
 template <>
 char * decode(std::ostream & os, char * b, void ** dummy)
 {
+    constexpr auto vpsize = sizeof(void *);    
     uint64_t arg = *reinterpret_cast < uint64_t * >(b);
     auto flags = os.flags();
-    os << "0x" << std::setw(16) << std::setfill('0') << std::hex << std::uppercase << arg;
+    os << "0x" << std::setw(vpsize*2) << std::setfill('0') << std::hex << std::uppercase << arg;
+    // os << ((void *)arg);
     os.flags(flags);
-    return b + sizeof(uint64_t);
+    return b + vpsize;
 }
 
 void NanoLogLine::stringify(std::ostream & os, char * start, char const * const end) const

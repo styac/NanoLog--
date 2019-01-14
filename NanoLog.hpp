@@ -117,7 +117,6 @@ void sub_log_category(category_mask_t::value_type mask);
 
 bool is_logged(LogLevel level, category_mask_t::value_type mask=-1LL);
 
-// TODO category tag
 class NanoLogLine final
 {
 public:
@@ -328,27 +327,19 @@ void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std:
 
 #define LOG_DUMPHEX(V) nanolog::NanoLogLine::dumpbytes_t(std::addressof(V),sizeof(V))
 
-// add a Category id? macro
-
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
-#define NANO_LOG_CAT2(LEVEL,cat) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__,cat)
+#define NANO_LOG_CAT(LEVEL,cat) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__,cat)
 #define LOG_DEBUG nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG)
 #define LOG_TRACE nanolog::is_logged(nanolog::LogLevel::TRACE) && NANO_LOG(nanolog::LogLevel::TRACE)
 #define LOG_INFO  nanolog::is_logged(nanolog::LogLevel::INFO)  && NANO_LOG(nanolog::LogLevel::INFO)
 #define LOG_WARN  nanolog::is_logged(nanolog::LogLevel::WARN)  && NANO_LOG(nanolog::LogLevel::WARN)
 #define LOG_CRIT  nanolog::is_logged(nanolog::LogLevel::CRIT)  && NANO_LOG(nanolog::LogLevel::CRIT)
 
-#define LOG_DEBUG_CAT(mask) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG(nanolog::LogLevel::DEBUG)
-#define LOG_TRACE_CAT(mask) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG(nanolog::LogLevel::TRACE)
-#define LOG_INFO_CAT(mask)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG(nanolog::LogLevel::INFO)
-#define LOG_WARN_CAT(mask)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG(nanolog::LogLevel::WARN)
-#define LOG_CRIT_CAT(mask)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG(nanolog::LogLevel::CRIT)
-
-#define LOG_DEBUG_CAT2(mask,cat) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG_CAT2(nanolog::LogLevel::DEBUG,(cat))
-#define LOG_TRACE_CAT2(mask,cat) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG_CAT2(nanolog::LogLevel::TRACE,(cat))
-#define LOG_INFO_CAT2(mask,cat)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG_CAT2(nanolog::LogLevel::INFO,(cat))
-#define LOG_WARN_CAT2(mask,cat)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG_CAT2(nanolog::LogLevel::WARN,(cat))
-#define LOG_CRIT_CAT2(mask,cat)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG_CAT2(nanolog::LogLevel::CRIT,(cat))
+#define LOG_DEBUG_CAT(mask,cat) nanolog::is_logged(nanolog::LogLevel::DEBUG,mask) && NANO_LOG_CAT(nanolog::LogLevel::DEBUG,(cat))
+#define LOG_TRACE_CAT(mask,cat) nanolog::is_logged(nanolog::LogLevel::TRACE,mask) && NANO_LOG_CAT(nanolog::LogLevel::TRACE,(cat))
+#define LOG_INFO_CAT(mask,cat)  nanolog::is_logged(nanolog::LogLevel::INFO,mask)  && NANO_LOG_CAT(nanolog::LogLevel::INFO,(cat))
+#define LOG_WARN_CAT(mask,cat)  nanolog::is_logged(nanolog::LogLevel::WARN,mask)  && NANO_LOG_CAT(nanolog::LogLevel::WARN,(cat))
+#define LOG_CRIT_CAT(mask,cat)  nanolog::is_logged(nanolog::LogLevel::CRIT,mask)  && NANO_LOG_CAT(nanolog::LogLevel::CRIT,(cat))
 
 #endif /* NANO_LOG_HEADER_GUARD */
 
