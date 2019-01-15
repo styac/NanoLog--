@@ -49,17 +49,17 @@ inline std::thread::id this_thread_id()
     return id;
 }
 
-inline uint64_t timestamp_now()
+inline std::uint64_t timestamp_now()
 {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 }
 
-inline void format_timestamp(std::ostream & os, uint64_t timestamp)
+inline void format_timestamp(std::ostream & os, std::uint64_t timestamp)
 {
-    constexpr uint32_t time2sec = 1000*1000*1000;
+    constexpr std::uint32_t time2sec = 1000*1000*1000;
     char buffer[32];
     const std::time_t time_t = timestamp / time2sec;
-    const uint32_t frac_time = timestamp % time2sec;
+    const std::uint32_t frac_time = timestamp % time2sec;
     const auto gmtime = std::gmtime(&time_t);
     // 012345678901234567890123456789
     // [2018-12-30 14:38:27.uuuuuuuuu]
@@ -68,8 +68,8 @@ inline void format_timestamp(std::ostream & os, uint64_t timestamp)
     os << buffer;
 }
 
-std::atomic < unsigned int >    m_loglevel  = {0};
-std::atomic < unsigned int >    m_logformat = {0};
+std::atomic < std::uint8_t >    m_loglevel  = {0};
+std::atomic < std::uint8_t >    m_logformat = {0};
 nanolog::category_mask_t        m_category_mask;
 
 template < typename T, typename Tuple >
@@ -111,12 +111,12 @@ void sub_log_category(category_mask_t::value_type mask)
 
 typedef std::tuple < NanoLogLine::truncated_t,
     char, 
-    uint16_t, 
-    uint32_t, 
-    uint64_t, 
-    int16_t, 
-    int32_t, 
-    int64_t, 
+    std::uint16_t, 
+    std::uint32_t, 
+    std::uint64_t, 
+    std::int16_t, 
+    std::int32_t, 
+    std::int64_t, 
     float, 
     double, 
     NanoLogLine::string_literal_t, 
@@ -133,11 +133,12 @@ inline char const * to_string(LogLevel loglevel)
          " WRN ",
          " ERR ",
          " CRT ",
+         " IERROR ",
          " SKIPPED ",
     };
 
-    const auto ll = uint8_t(loglevel);
-    return ll < uint8_t(LogLevel::NONE) ? str[ll] : " XXX ";
+    const auto ll = std::uint8_t(loglevel);
+    return ll < std::uint8_t(LogLevel::NONE) ? str[ll] : " XXX ";
 }
 
 template < typename Arg >
@@ -147,24 +148,24 @@ void NanoLogLine::encode(Arg arg)
     m_bytes_used += sizeof(Arg);
 }
 
-#ifdef TRUNCATE_LONG_LINES
+#ifdef NANOLOG_TRUNCATE_LONG_LINES
 
 template < typename Arg >
-void NanoLogLine::encode(Arg arg, uint8_t type_id)
+void NanoLogLine::encode(Arg arg, std::uint8_t type_id)
 {
-    if( resize_buffer_if_needed(sizeof(Arg) + sizeof(uint8_t)) )
+    if( resize_buffer_if_needed(sizeof(Arg) + sizeof(std::uint8_t)) )
     {        
-        encode < uint8_t >(type_id);
+        encode < std::uint8_t >(type_id);
         encode < Arg >(arg);
     }
     else // truncate
     {
         auto type_id = TupleIndex < truncated_t, SupportedTypes >::value;
-        encode < uint8_t >(type_id);
+        encode < std::uint8_t >(type_id);
     }
 }
 
-NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line, char const * category)
+NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, std::uint32_t line, char const * category)
 : m_timestamp(timestamp_now())
 , m_file(file)
 , m_function(function) 
@@ -186,17 +187,21 @@ NanoLogLine::NanoLogLine()
 , m_loglevel(LogLevel::NONE)
 {}
 
-#else // TRUNCATE_LONG_LINES
+#else // NANOLOG_TRUNCATE_LONG_LINES
 
 template < typename Arg >
-void NanoLogLine::encode(Arg arg, uint8_t type_id)
+void NanoLogLine::encode(Arg arg, std::uint8_t type_id)
 {
-    resize_buffer_if_needed(sizeof(Arg) + sizeof(uint8_t));
-    encode < uint8_t >(type_id);
-    encode < Arg >(arg);
+    if ( resize_buffer_if_needed(sizeof(Arg) + sizeof(std::uint8_t)) ) 
+    {
+        encode < std::uint8_t >(type_id);
+        encode < Arg >(arg);
+        return;
+    }
+    // TODO add error handling    
 }
 
-NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, uint32_t line, char const * category)
+NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, std::uint32_t line, char const * category)
 : m_bytes_used(0)
 , m_buffer_size(sizeof(m_stack_buffer))
 , m_heap_buffer()
@@ -222,20 +227,20 @@ NanoLogLine::NanoLogLine()
 , m_loglevel(LogLevel::NONE)
 {}
 
-#endif // TRUNCATE_LONG_LINES
+#endif // NANOLOG_TRUNCATE_LONG_LINES
 
 void NanoLogLine::stringify(std::ostream & os) 
 {
-#ifdef TRUNCATE_LONG_LINES
+#ifdef NANOLOG_TRUNCATE_LONG_LINES
     char * b = m_stack_buffer;
-#else // TRUNCATE_LONG_LINES
+#else // NANOLOG_TRUNCATE_LONG_LINES
     char * b = !m_heap_buffer ? m_stack_buffer : m_heap_buffer.get();
-#endif // TRUNCATE_LONG_LINES
+#endif // NANOLOG_TRUNCATE_LONG_LINES
     char const * const end = b + m_bytes_used;
     auto format = m_logformat.load(std::memory_order_acquire);
     
     os << std::dec;    
-    if( format & uint8_t(LogFormat::LF_DATE_TIME) ) 
+    if( format & std::uint8_t(LogFormat::LF_DATE_TIME) ) 
     {
         format_timestamp(os, m_timestamp);
     }    
@@ -243,13 +248,13 @@ void NanoLogLine::stringify(std::ostream & os)
     if( m_category.m_s[0] != 0 ) {
         os << m_category.m_s << " ";        
     }
-    if( format & uint8_t(LogFormat::LF_THREAD) ) 
+    if( format & std::uint8_t(LogFormat::LF_THREAD) ) 
     {
         auto flags = os.flags();
         os << std::hex << std::uppercase << m_thread_id << " ";
         os.flags(flags);
     }
-    if( format & uint8_t(LogFormat::LF_FILE_FUNC) ) 
+    if( format & std::uint8_t(LogFormat::LF_FILE_FUNC) ) 
     {
         os << "[" << m_file.m_s
         << ':' << m_function.m_s
@@ -282,10 +287,10 @@ template <>
 char * decode(std::ostream & os, char * b, NanoLogLine::dumpbytes_t * dummy)
 {
     static char hexc[] = { '0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F' };    
-    uint8_t length = *b;
+    std::uint8_t length = *b;
     for(auto i=0u; i<length; ++i)
     {
-        uint8_t byte = *(++b);
+        std::uint8_t byte = *(++b);
         os << ' ' << (hexc[byte>>4]) << (hexc[byte&0x0F]);
     }          
     return ++b;
@@ -313,7 +318,7 @@ template <>
 char * decode(std::ostream & os, char * b, void ** dummy)
 {
     constexpr auto vpsize = sizeof(void *);    
-    uint64_t arg = *reinterpret_cast < uint64_t * >(b);
+    std::uint64_t arg = *reinterpret_cast < std::uint64_t * >(b);
     auto flags = os.flags();
     os << "0x" << std::setw(vpsize*2) << std::setfill('0') << std::hex << std::uppercase << arg;
     // os << ((void *)arg);
@@ -378,8 +383,7 @@ void NanoLogLine::stringify(std::ostream & os, char * start, char const * const 
     static_assert( 13 == ( std::tuple_size<SupportedTypes>::value - 1 ), "FATAL: not implemented type" );
 }
 
-
-#ifdef TRUNCATE_LONG_LINES
+#ifdef NANOLOG_TRUNCATE_LONG_LINES
 
 void NanoLogLine::truncate(char * b)
 {
@@ -407,7 +411,7 @@ void NanoLogLine::encode_c_string(char const * arg, size_t length)
     {        
         char * b = buffer();
         auto type_id = TupleIndex < char *, SupportedTypes >::value;
-        *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+        *reinterpret_cast<std::uint8_t*>(b++) = static_cast<std::uint8_t>(type_id);
         memcpy(b, arg, length + 1);
         m_bytes_used += 1 + length + 1;
     }
@@ -418,7 +422,7 @@ void NanoLogLine::encode_c_string(char const * arg, size_t length)
         if( remaining_bytes > 0 )
         {
             auto type_id = TupleIndex < char *, SupportedTypes >::value;
-            *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+            *reinterpret_cast<std::uint8_t*>(b++) = static_cast<std::uint8_t>(type_id);
             length = std::min( int(length), remaining_bytes);
             memcpy(b, arg, length); 
             b += length;
@@ -446,8 +450,8 @@ void NanoLogLine::encode(dumpbytes_t const& arg)
     {
         char * b = buffer();
         auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
-        *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
-        *reinterpret_cast<uint8_t*>(b++) = uint8_t(length);
+        *reinterpret_cast<std::uint8_t*>(b++) = static_cast<std::uint8_t>(type_id);
+        *reinterpret_cast<std::uint8_t*>(b++) = std::uint8_t(length);
         memcpy(b, arg.ptr, length);
         m_bytes_used += 2 + length;
     }
@@ -458,9 +462,9 @@ void NanoLogLine::encode(dumpbytes_t const& arg)
         if( remaining_bytes > 0 )
         {
             auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
-            *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
+            *reinterpret_cast<std::uint8_t*>(b++) = static_cast<std::uint8_t>(type_id);
             length = std::min( int(length), remaining_bytes);
-            *reinterpret_cast<uint8_t*>(b++) = uint8_t(length);
+            *reinterpret_cast<std::uint8_t*>(b++) = std::uint8_t(length);
             memcpy(b, arg.ptr, length); 
             b += 2 + length;
             truncate(b);
@@ -472,7 +476,15 @@ void NanoLogLine::encode(dumpbytes_t const& arg)
     }
 }
 
-#else // TRUNCATE_LONG_LINES
+#else // NANOLOG_TRUNCATE_LONG_LINES
+
+void NanoLogLine::truncate(char * b)
+{
+    auto type_id = TupleIndex < truncated_t, SupportedTypes >::value;
+    *b = type_id;
+    m_bytes_used = m_buffer_size;
+    set_ierror();
+}
 
 inline char * NanoLogLine::buffer()
 {
@@ -488,31 +500,47 @@ bool NanoLogLine::resize_buffer_if_needed(size_t additional_bytes)
 
     if (!m_heap_buffer)
     {
-        m_buffer_size = std::max(static_cast<size_t>(512), required_size);
-        m_heap_buffer.reset(new char[m_buffer_size]);
-        memcpy(m_heap_buffer.get(), m_stack_buffer, m_bytes_used);
-        return true;
+        try
+        {
+            m_buffer_size = std::max(static_cast<size_t>(512), required_size);
+            m_heap_buffer.reset(new char[m_buffer_size]);            
+            memcpy(m_heap_buffer.get(), m_stack_buffer, m_bytes_used);
+            return true;
+        }
+        catch( ... )
+        {
+            return false;
+        }
     }
-    else
+    
+    try
     {
         m_buffer_size = std::max(static_cast<size_t>(2 * m_buffer_size), required_size);
-        std::unique_ptr < char [] > new_heap_buffer(new char[m_buffer_size]);
+        std::unique_ptr < char [] > new_heap_buffer(new char[m_buffer_size]);            
         memcpy(new_heap_buffer.get(), m_heap_buffer.get(), m_bytes_used);
         m_heap_buffer.swap(new_heap_buffer);
+        return true;
     }
-    return true;
+    catch( ... )
+    {
+        return false;
+    }
 }
 
 void NanoLogLine::encode_c_string(char const * arg, size_t length)
 {
     if (length == 0)
         return;
-    resize_buffer_if_needed(1 + length + 1);
-    char * b = buffer();
-    auto type_id = TupleIndex < char *, SupportedTypes >::value;
-    *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
-    memcpy(b, arg, length + 1);
-    m_bytes_used += 1 + length + 1;
+    if( resize_buffer_if_needed(1 + length + 1) )
+    {
+        char * b = buffer();
+        auto type_id = TupleIndex < char *, SupportedTypes >::value;
+        *reinterpret_cast<std::uint8_t*>(b++) = static_cast<std::uint8_t>(type_id);
+        memcpy(b, arg, length + 1);
+        m_bytes_used += 1 + length + 1;
+        return;
+    }
+    // TODO add error handling
 }
 
 void NanoLogLine::encode(dumpbytes_t const& arg)
@@ -524,16 +552,20 @@ void NanoLogLine::encode(dumpbytes_t const& arg)
     {
        length=128; 
     }
-    resize_buffer_if_needed(1 + length + 1);
-    char * b = buffer();
-    auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
-    *reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
-    *reinterpret_cast<uint8_t*>(b++) = uint8_t(length);
-    memcpy(b, arg.ptr, length);
-    m_bytes_used += 2 + length;
+    if( resize_buffer_if_needed(1 + length + 1) ) 
+    {
+        char * b = buffer();
+        auto type_id = TupleIndex < dumpbytes_t, SupportedTypes >::value;
+        *reinterpret_cast<std::uint8_t*>(b++) = static_cast<std::uint8_t>(type_id);
+        *reinterpret_cast<std::uint8_t*>(b++) = std::uint8_t(length);
+        memcpy(b, arg.ptr, length);
+        m_bytes_used += 2 + length;
+        
+    }
+    // TODO add error handling
 }
 
-#endif // TRUNCATE_LONG_LINES
+#endif // NANOLOG_TRUNCATE_LONG_LINES
 
 void NanoLogLine::encode(char const * arg)
 {
@@ -558,39 +590,39 @@ NanoLogLine& NanoLogLine::operator<<(std::string const & arg)
     return *this;
 }
 
-NanoLogLine& NanoLogLine::operator<<(int16_t arg)
+NanoLogLine& NanoLogLine::operator<<(std::int16_t arg)
 {
-    encode < int16_t >(arg, TupleIndex < int16_t, SupportedTypes >::value);
+    encode < std::int16_t >(arg, TupleIndex < std::int16_t, SupportedTypes >::value);
     return *this;
 }
 
-NanoLogLine& NanoLogLine::operator<<(uint16_t arg)
+NanoLogLine& NanoLogLine::operator<<(std::uint16_t arg)
 {
-    encode < uint16_t >(arg, TupleIndex < uint16_t, SupportedTypes >::value);
+    encode < std::uint16_t >(arg, TupleIndex < std::uint16_t, SupportedTypes >::value);
     return *this;
 }
 
-NanoLogLine& NanoLogLine::operator<<(int32_t arg)
+NanoLogLine& NanoLogLine::operator<<(std::int32_t arg)
 {
-    encode < int32_t >(arg, TupleIndex < int32_t, SupportedTypes >::value);
+    encode < std::int32_t >(arg, TupleIndex < std::int32_t, SupportedTypes >::value);
     return *this;
 }
 
-NanoLogLine& NanoLogLine::operator<<(uint32_t arg)
+NanoLogLine& NanoLogLine::operator<<(std::uint32_t arg)
 {
-    encode < uint32_t >(arg, TupleIndex < uint32_t, SupportedTypes >::value);
+    encode < std::uint32_t >(arg, TupleIndex < std::uint32_t, SupportedTypes >::value);
     return *this;
 }
 
-NanoLogLine& NanoLogLine::operator<<(int64_t arg)
+NanoLogLine& NanoLogLine::operator<<(std::int64_t arg)
 {
-    encode < int64_t >(arg, TupleIndex < int64_t, SupportedTypes >::value);
+    encode < std::int64_t >(arg, TupleIndex < std::int64_t, SupportedTypes >::value);
     return *this;
 }
 
-NanoLogLine& NanoLogLine::operator<<(uint64_t arg)
+NanoLogLine& NanoLogLine::operator<<(std::uint64_t arg)
 {
-    encode < uint64_t >(arg, TupleIndex < uint64_t, SupportedTypes >::value);
+    encode < std::uint64_t >(arg, TupleIndex < std::uint64_t, SupportedTypes >::value);
     return *this;
 }
 
@@ -855,6 +887,7 @@ public:
 private:
     void setup_next_write_buffer()
     {
+        // TODO add error handling - exception + return val
         std::unique_ptr < Buffer > next_write_buffer(new Buffer());
         m_current_write_buffer.store(next_write_buffer.get(), std::memory_order_release);
         SpinLock spinlock(m_flag);
@@ -879,7 +912,7 @@ private:
 class FileWriter final
 {
 public:
-    FileWriter(std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
+    FileWriter(std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
     : m_bytes_written(0)
     , m_log_file_roll_size_bytes(log_file_roll_size_mb * 1024 * 1024)
     , m_name(log_directory + log_file_name + "_")
@@ -923,14 +956,14 @@ public:
 private:
     void roll_file()
     {
-        constexpr uint32_t time2sec = 1000*1000*1000;
+        constexpr std::uint32_t time2sec = 1000*1000*1000;
         char buffer[40];
         m_os.flush();
         m_os.close();
         m_bytes_written = 0;
         auto filetime = timestamp_now();
         const std::time_t time_t = filetime / time2sec;
-        const uint32_t frac_time = filetime % time2sec;
+        const std::uint32_t frac_time = filetime % time2sec;
         const auto gmtime = std::gmtime(&time_t);
         std::strftime( buffer, 20, "%F_%T", gmtime );
         sprintf( &buffer[19], "_%09u.log", frac_time );
@@ -938,16 +971,16 @@ private:
     }
 
     std::streamoff      m_bytes_written;
-    uint32_t const      m_log_file_roll_size_bytes;
+    std::uint32_t const m_log_file_roll_size_bytes;
     std::string const   m_name;
     std::ofstream       m_os;
-    uint8_t             m_useFile : 1;
+    std::uint8_t        m_useFile : 1;
 };
 
 class NanoLogger final
 {
 public:
-    NanoLogger(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
+    NanoLogger(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
     : m_state(State::INIT)
     , m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4))
     , m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb))
@@ -956,7 +989,7 @@ public:
         m_state.store(State::READY, std::memory_order_release);
     }
 
-    NanoLogger(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
+    NanoLogger(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
     : m_state(State::INIT)
     , m_buffer_base(new QueueBuffer())
     , m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb))
@@ -1021,22 +1054,26 @@ bool NanoLog::operator==(NanoLogLine & logline)
     return true;
 }
 
-void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
+void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
 {
     nanologger.reset(new NanoLogger(ngl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-    m_logformat.store( uint8_t(LogFormat::LF_ALL));
+    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
 }
 
-void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
+void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
 {
     nanologger.reset(new NanoLogger(gl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-    m_logformat.store( uint8_t(LogFormat::LF_ALL));
+    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
 }
 
 void set_log_level(LogLevel level)
 {
+    if( uint8_t(level) > uint8_t(LogLevel::CRIT)) {
+        m_loglevel.store(static_cast<unsigned int>(LogLevel::NONE), std::memory_order_release);
+        return;
+    }
     m_loglevel.store(static_cast<unsigned int>(level), std::memory_order_release);
 }
 
