@@ -33,7 +33,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 
 // do not allocate heap buffer
-// #define NANOLOG_TRUNCATE_LONG_LINES
+#define NANOLOG_TRUNCATE_LONG_LINES
 
 // may give a warning
 #ifdef NANOLOG_TRUNCATE_LONG_LINES
@@ -112,23 +112,23 @@ private:
 
 constexpr size_t LINEBUFFER_SIZE = 256;
 
-void set_log_level(LogLevel level);
+void set_log_level(LogLevel level) noexcept;
 
-void set_log_format(LogFormat format);
+void set_log_format(LogFormat format) noexcept;
 
-void set_log_category(category_mask_t::value_type mask);
+void set_log_category(category_mask_t::value_type mask) noexcept;
 
-void add_log_category(category_mask_t::value_type mask);
+void add_log_category(category_mask_t::value_type mask) noexcept;
 
-void sub_log_category(category_mask_t::value_type mask);
+void sub_log_category(category_mask_t::value_type mask) noexcept;
 
-bool is_logged(LogLevel level, category_mask_t::value_type mask=-1LL);
+bool is_logged(LogLevel level, category_mask_t::value_type mask=-1LL) noexcept;
 
 class NanoLogLine final
 {
 public:
-    NanoLogLine(LogLevel level, char const * file, char const * function, std::uint32_t line, char const * category="");
-    NanoLogLine(); // for init
+    NanoLogLine(LogLevel level, char const * file, char const * function, std::uint32_t line, char const * category="") noexcept;
+    NanoLogLine() noexcept; // for init
     ~NanoLogLine()  = default;
 
     NanoLogLine(NanoLogLine &&) = default;
@@ -137,7 +137,7 @@ public:
     struct dumpbytes_t
     {
         dumpbytes_t() = delete;
-        dumpbytes_t(void * p, size_t l)
+        dumpbytes_t(void * p, size_t l) noexcept
         : ptr(p)
         , size(l)
         {}
@@ -148,7 +148,7 @@ public:
     struct string_literal_t
     {
         string_literal_t() = delete;
-        explicit string_literal_t(char const * s)
+        explicit string_literal_t(char const * s) noexcept
         : m_s(s) {}
         char const * m_s;
     };
@@ -156,23 +156,23 @@ public:
     struct truncated_t
     {};
                
-    void stringify(std::ostream & os);
+    void stringify(std::ostream & os) noexcept;
 
-    NanoLogLine& operator<<(char arg);
-    NanoLogLine& operator<<(std::int16_t arg);
-    NanoLogLine& operator<<(std::uint16_t arg);
-    NanoLogLine& operator<<(std::int32_t arg);
-    NanoLogLine& operator<<(std::uint32_t arg);
-    NanoLogLine& operator<<(std::int64_t arg);
-    NanoLogLine& operator<<(std::uint64_t arg);
-    NanoLogLine& operator<<(float arg);
-    NanoLogLine& operator<<(double arg);
-    NanoLogLine& operator<<(void * arg);
-    NanoLogLine& operator<<(dumpbytes_t const & arg);        
-    NanoLogLine& operator<<(std::string const & arg);
+    NanoLogLine& operator<<(char arg) noexcept;
+    NanoLogLine& operator<<(std::int16_t arg) noexcept;
+    NanoLogLine& operator<<(std::uint16_t arg) noexcept;
+    NanoLogLine& operator<<(std::int32_t arg) noexcept;
+    NanoLogLine& operator<<(std::uint32_t arg) noexcept;
+    NanoLogLine& operator<<(std::int64_t arg) noexcept;
+    NanoLogLine& operator<<(std::uint64_t arg) noexcept;
+    NanoLogLine& operator<<(float arg) noexcept;
+    NanoLogLine& operator<<(double arg) noexcept;
+    NanoLogLine& operator<<(void * arg) noexcept;
+    NanoLogLine& operator<<(dumpbytes_t const & arg) noexcept;        
+    NanoLogLine& operator<<(std::string const & arg) noexcept;
 
     template < size_t N >
-    NanoLogLine& operator<<(const char (&arg)[N])
+    NanoLogLine& operator<<(const char (&arg)[N]) noexcept
     {
         encode(string_literal_t(arg));
         return *this;
@@ -180,7 +180,7 @@ public:
 
     template < typename Arg >
     typename std::enable_if < std::is_same < Arg, char const * >::value, NanoLogLine& >::type
-    operator<<(Arg const & arg)
+    operator<<(Arg const & arg) noexcept
     {
         encode(arg);
         return *this;
@@ -188,49 +188,49 @@ public:
 
     template < typename Arg >
     typename std::enable_if < std::is_same < Arg, char * >::value, NanoLogLine& >::type
-    operator<<(Arg const & arg)
+    operator<<(Arg const & arg) noexcept
     {
         encode(arg);
         return *this;
     }
      
-    void set_skipped()
+    void set_skipped() noexcept
     {
         m_loglevel = LogLevel::SKIPPED;
     }
     
-    void set_ierror()
+    void set_ierror() noexcept
     {
         m_loglevel = LogLevel::IERROR;
     }
 
-    std::uint64_t get_timestamp() const
+    std::uint64_t get_timestamp() const noexcept
     {
         return m_timestamp;
     }
     
-    std::uint8_t get_loglevel() const
+    std::uint8_t get_loglevel() const noexcept
     {
         return std::uint8_t(m_loglevel);
     }
 
 private:
-    char * buffer();
+    char * buffer() noexcept;
 
     template < typename Arg >
-    void encode(Arg arg);
+    void encode(Arg arg) noexcept;
 
     template < typename Arg >
-    void encode(Arg arg, std::uint8_t type_id);
+    void encode(Arg arg, std::uint8_t type_id) noexcept;
 
-    void encode(char * arg);
-    void encode(char const * arg);
-    void encode(string_literal_t arg);
-    void encode_c_string(char const * arg, size_t length);
-    void encode(dumpbytes_t const& arg);
-    bool resize_buffer_if_needed(size_t additional_bytes);
-    void stringify(std::ostream & os, char * start, char const * const end) const;
-    void truncate(char * b);
+    void encode(char * arg) noexcept;
+    void encode(char const * arg) noexcept;
+    void encode(string_literal_t arg) noexcept;
+    void encode_c_string(char const * arg, size_t length) noexcept;
+    void encode(dumpbytes_t const& arg) noexcept;
+    bool resize_buffer_if_needed(size_t additional_bytes) noexcept;
+    void stringify(std::ostream & os, char * start, char const * const end) const noexcept;
+    void truncate(char * b) noexcept;
     
 #ifdef NANOLOG_TRUNCATE_LONG_LINES
 
