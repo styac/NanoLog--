@@ -33,7 +33,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 
 // do not allocate heap buffer
-#define NANOLOG_TRUNCATE_LONG_LINES
+// #define NANOLOG_TRUNCATE_LONG_LINES
 
 // may give a warning
 #ifdef NANOLOG_TRUNCATE_LONG_LINES

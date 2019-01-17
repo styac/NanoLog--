@@ -148,8 +148,6 @@ void NanoLogLine::encode(Arg arg) noexcept
     m_bytes_used += sizeof(Arg);
 }
 
-#ifdef NANOLOG_TRUNCATE_LONG_LINES
-
 template < typename Arg >
 void NanoLogLine::encode(Arg arg, std::uint8_t type_id) noexcept
 {
@@ -164,6 +162,8 @@ void NanoLogLine::encode(Arg arg, std::uint8_t type_id) noexcept
         encode < std::uint8_t >(type_id);
     }
 }
+
+#ifdef NANOLOG_TRUNCATE_LONG_LINES
 
 NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, std::uint32_t line, char const * category) noexcept
 : m_timestamp(timestamp_now())
@@ -188,18 +188,6 @@ NanoLogLine::NanoLogLine() noexcept
 {}
 
 #else // NANOLOG_TRUNCATE_LONG_LINES
-
-template < typename Arg >
-void NanoLogLine::encode(Arg arg, std::uint8_t type_id) noexcept
-{
-    if ( resize_buffer_if_needed(sizeof(Arg) + sizeof(std::uint8_t)) ) 
-    {
-        encode < std::uint8_t >(type_id);
-        encode < Arg >(arg);
-        return;
-    }
-    // TODO add error handling    
-}
 
 NanoLogLine::NanoLogLine(LogLevel level, char const * file, char const * function, std::uint32_t line, char const * category) noexcept
 : m_bytes_used(0)
