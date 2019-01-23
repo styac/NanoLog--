@@ -68,10 +68,6 @@ inline void format_timestamp(std::ostream & os, std::uint64_t timestamp) noexcep
     os << buffer;
 }
 
-std::atomic < std::uint8_t >    m_loglevel  = {0};
-std::atomic < std::uint8_t >    m_logformat = {0};
-nanolog::category_mask_t        m_category_mask;
-
 template < typename T, typename Tuple >
 struct TupleIndex;
 
@@ -86,27 +82,32 @@ struct TupleIndex < T, std::tuple < U, Types... > >
 {
     static constexpr const std::size_t value = 1 + TupleIndex < T, std::tuple < Types... > >::value;
 };
-
+    
 } // anonymous namespace
 
 // -----------------------------------------------
 
 namespace nanolog
 {
-
-void set_log_category(category_mask_t::value_type mask) noexcept
+    
+void LogControl::unlock_loglevel() 
 {
-    m_category_mask.set(mask);
+    m_loglevel.store(static_cast<std::uint8_t>(LogLevel::NONE), std::memory_order_release );        
+}
+    
+void set_log_category(LogControl::value_type mask) noexcept
+{
+    LogControl::instance().set(mask);
 }
 
-void add_log_category(category_mask_t::value_type mask) noexcept
+void add_log_category(LogControl::value_type mask) noexcept
 {
-    m_category_mask.add(mask);    
+    LogControl::instance().add(mask);    
 }
 
-void sub_log_category(category_mask_t::value_type mask) noexcept
+void sub_log_category(LogControl::value_type mask) noexcept
 {
-    m_category_mask.sub(mask);    
+    LogControl::instance().sub(mask);    
 }    
 
 typedef std::tuple < NanoLogLine::truncated_t,
@@ -225,8 +226,7 @@ void NanoLogLine::stringify(std::ostream & os) noexcept
     char * b = !m_heap_buffer ? m_stack_buffer : m_heap_buffer.get();
 #endif // NANOLOG_TRUNCATE_LONG_LINES
     char const * const end = b + m_bytes_used;
-    auto format = m_logformat.load(std::memory_order_acquire);
-    
+    auto format = LogControl::instance().get_logFormat();       
     os << std::dec;    
     if( format & std::uint8_t(LogFormat::LF_DATE_TIME) ) 
     {
@@ -313,6 +313,7 @@ char * decode(std::ostream & os, char * b, void ** dummy) noexcept
     os.flags(flags);
     return b + vpsize;
 }
+
 void NanoLogLine::encode_c_string(char const * arg, size_t length) noexcept
 {
     if (length == 0)
@@ -346,7 +347,6 @@ void NanoLogLine::encode_c_string(char const * arg, size_t length) noexcept
         }
     }
 }
-
 
 void NanoLogLine::encode(dumpbytes_t const& arg) noexcept
 {    
@@ -514,7 +514,6 @@ bool NanoLogLine::resize_buffer_if_needed(size_t additional_bytes) noexcept
         return false;
     }
 }
-
 
 #endif // NANOLOG_TRUNCATE_LONG_LINES
 
@@ -716,7 +715,6 @@ private:
     char pad[ 64 - sizeof(m_size) - sizeof(m_ring) - sizeof(m_write_index) ];
     unsigned int m_read_index;
 };
-
 
 class Buffer final
 {
@@ -938,6 +936,7 @@ public:
     , m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
+        LogControl::instance().unlock_loglevel();
     }
 
     NanoLogger(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
@@ -947,6 +946,7 @@ public:
     , m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
+        LogControl::instance().unlock_loglevel();
     }
 
     ~NanoLogger()
@@ -1009,34 +1009,40 @@ void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std:
 {
     nanologger.reset(new NanoLogger(ngl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
+//    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
+    LogControl::instance().set_logFormat(LogFormat::LF_ALL);
 }
 
 void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
 {
     nanologger.reset(new NanoLogger(gl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
+//    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
+    LogControl::instance().set_logFormat(LogFormat::LF_ALL);
+
 }
 
 void set_log_level(LogLevel level) noexcept
 {
     if( uint8_t(level) > uint8_t(LogLevel::CRIT)) {
-        m_loglevel.store(static_cast<unsigned int>(LogLevel::NONE), std::memory_order_release);
+        LogControl::instance().set_loglevel(static_cast<unsigned int>(LogLevel::NONE));
+//        m_loglevel.store(static_cast<unsigned int>(LogLevel::NONE), std::memory_order_release);
         return;
     }
-    m_loglevel.store(static_cast<unsigned int>(level), std::memory_order_release);
+//    m_loglevel.store(static_cast<unsigned int>(level), std::memory_order_release);
+    LogControl::instance().set_loglevel(static_cast<unsigned int>(level));
 }
 
-void set_log_format(LogFormat mode) noexcept
+void set_log_format(LogFormat val) noexcept
 {
-    m_logformat.store(static_cast<unsigned int>(mode), std::memory_order_release);    
+    LogControl::instance().set_logFormat(val);
+//    m_logformat.store(static_cast<unsigned int>(mode), std::memory_order_release);    
 }
 
-bool is_logged(LogLevel level, category_mask_t::value_type mask) noexcept
+bool is_logged(LogLevel level, LogControl::value_type mask) noexcept
 {
-    return (static_cast<unsigned int>(level) >= m_loglevel.load(std::memory_order_relaxed)) &&
-            m_category_mask.is_set(mask);
+    return (static_cast<unsigned int>(level) >= LogControl::instance().get_loglevel()) &&
+            LogControl::instance().is_set(mask);
 }
 
 } // namespace nanologger

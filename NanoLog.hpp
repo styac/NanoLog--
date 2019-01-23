@@ -42,6 +42,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 namespace nanolog
 {
+    
+class NanoLogger;
+
 enum class LogLevel : std::uint8_t
 {
     TRACE,
@@ -69,45 +72,86 @@ enum LogFormat : std::uint8_t
 // 63 user categories to filter out
 // bit 64 "always" cannot be filtered out
 
-class category_mask_t
+class LogControl
 {
 public:
+    friend class NanoLogger;
+
     typedef std::uint64_t value_type;
     enum {
         log_always = 1LL<<63
     };
     
-    category_mask_t()
-    : m_mask(-1LL) // all modules enabled
-    {}
-    
+    static auto& instance()
+    {
+        static LogControl instance;
+        return instance;
+    }
+    // TODO rename
     void set(value_type val)
     {
         m_mask.store(val | log_always, std::memory_order_relaxed);
     }
     
+    // TODO rename
     void add(value_type val)
     {
         m_mask |= val;
     }
 
+    // TODO rename
     void sub(value_type val)
     {
         m_mask &= (~val) | log_always;
     }
 
+    // TODO rename
     value_type get() const
     {
         return m_mask.load(std::memory_order_acquire);
     }
 
+    // TODO rename
     bool is_set( value_type val ) const
     {
         return m_mask.load(std::memory_order_acquire) & val;
     }
+
+    std::uint8_t get_loglevel() const
+    {
+        return m_loglevel.load(std::memory_order_acquire);
+    }
+    
+    void set_loglevel(std::uint8_t val) 
+    {
+        if(m_loglevel.load(std::memory_order_acquire) == 0xFF ) // locked 
+        {
+            return;
+        }
+        m_loglevel.store(val, std::memory_order_release);        
+    }
+    
+    std::uint8_t get_logFormat() const
+    {
+        return m_logformat.load(std::memory_order_acquire);
+    }
+    
+    void set_logFormat(std::uint8_t val) 
+    {
+        m_logformat.store(val, std::memory_order_release);        
+    }
     
 private:
-    std::atomic < value_type > m_mask;
+    void unlock_loglevel();   // only init can unlock it - avoid uninitialized crash
+
+    LogControl()
+    : m_mask(-1LL)          // all modules enabled
+    , m_loglevel(0xFF)      // disable all - locked
+    , m_logformat(LF_ALL)   // 
+    {}
+    std::atomic < value_type >      m_mask;
+    std::atomic < std::uint8_t >    m_loglevel;
+    std::atomic < std::uint8_t >    m_logformat;
 };
 
 constexpr size_t LINEBUFFER_SIZE = 256;
@@ -116,13 +160,13 @@ void set_log_level(LogLevel level) noexcept;
 
 void set_log_format(LogFormat format) noexcept;
 
-void set_log_category(category_mask_t::value_type mask) noexcept;
+void set_log_category(LogControl::value_type mask) noexcept;
 
-void add_log_category(category_mask_t::value_type mask) noexcept;
+void add_log_category(LogControl::value_type mask) noexcept;
 
-void sub_log_category(category_mask_t::value_type mask) noexcept;
+void sub_log_category(LogControl::value_type mask) noexcept;
 
-bool is_logged(LogLevel level, category_mask_t::value_type mask=-1LL) noexcept;
+bool is_logged(LogLevel level, LogControl::value_type mask=-1LL) noexcept;
 
 class NanoLogLine final
 {
@@ -234,7 +278,6 @@ private:
     
 #ifdef NANOLOG_TRUNCATE_LONG_LINES
 
-
     std::uint64_t       m_timestamp;
     string_literal_t    m_file;
     string_literal_t    m_function;    
@@ -284,6 +327,7 @@ private:
         - sizeof(m_loglevel)
         - 8 /* Reserved */
     ];
+
 #endif // NANOLOG_TRUNCATE_LONG_LINES
     
 };
@@ -301,6 +345,7 @@ struct NanoLog final
  * is determined by this parameter. Since each LogLine is 256 bytes,
  * ring_buffer_size = ring_buffer_size_mb * 1024 * 1024 / 256
  */
+
 struct NonGuaranteedLogger final
 {
     NonGuaranteedLogger(std::uint32_t ring_buffer_size_mb_) 
@@ -312,6 +357,7 @@ struct NonGuaranteedLogger final
 /*
  * Provides a guarantee log lines will not be dropped.
  */
+
 struct GuaranteedLogger final
 {
 };
@@ -326,6 +372,7 @@ struct GuaranteedLogger final
  * etc.
  * log_file_roll_size_mb - mega bytes after which we roll to next log file.
  */
+
 void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
 void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
 
