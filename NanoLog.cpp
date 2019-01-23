@@ -95,19 +95,19 @@ void LogControl::unlock_loglevel()
     m_loglevel.store(static_cast<std::uint8_t>(LogLevel::NONE), std::memory_order_release );        
 }
     
-void set_log_category(LogControl::value_type mask) noexcept
+void set_logCategory(LogControl::value_type mask) noexcept
 {
-    LogControl::instance().set(mask);
+    LogControl::instance().setCategory(mask);
 }
 
-void add_log_category(LogControl::value_type mask) noexcept
+void add_logCategory(LogControl::value_type mask) noexcept
 {
-    LogControl::instance().add(mask);    
+    LogControl::instance().addCategory(mask);
 }
 
-void sub_log_category(LogControl::value_type mask) noexcept
+void sub_logCategory(LogControl::value_type mask) noexcept
 {
-    LogControl::instance().sub(mask);    
+    LogControl::instance().subCategory(mask);
 }    
 
 typedef std::tuple < NanoLogLine::truncated_t,
@@ -936,7 +936,7 @@ public:
     , m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
-        LogControl::instance().unlock_loglevel();
+        LogControl::instance().unlock_loglevel(); // sets to NONE - hopefully nobody will change in the next microsec
     }
 
     NanoLogger(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
@@ -946,7 +946,7 @@ public:
     , m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
-        LogControl::instance().unlock_loglevel();
+        LogControl::instance().unlock_loglevel(); // sets to NONE - hopefully nobody will change in the next microsec
     }
 
     ~NanoLogger()
@@ -1009,40 +1009,38 @@ void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std:
 {
     nanologger.reset(new NanoLogger(ngl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-//    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
+    // init is ready - level is NONE
     LogControl::instance().set_logFormat(LogFormat::LF_ALL);
+    set_logLevel(LogLevel::CRIT);
 }
 
 void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
 {
     nanologger.reset(new NanoLogger(gl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-//    m_logformat.store( std::uint8_t(LogFormat::LF_ALL));
+    // init is ready - level is NONE
     LogControl::instance().set_logFormat(LogFormat::LF_ALL);
-
+    set_logLevel(LogLevel::CRIT);
 }
 
-void set_log_level(LogLevel level) noexcept
+void set_logLevel(LogLevel level) noexcept
 {
     if( uint8_t(level) > uint8_t(LogLevel::CRIT)) {
-        LogControl::instance().set_loglevel(static_cast<unsigned int>(LogLevel::NONE));
-//        m_loglevel.store(static_cast<unsigned int>(LogLevel::NONE), std::memory_order_release);
+        LogControl::instance().set_logLevel(static_cast<unsigned int>(LogLevel::NONE));
         return;
     }
-//    m_loglevel.store(static_cast<unsigned int>(level), std::memory_order_release);
-    LogControl::instance().set_loglevel(static_cast<unsigned int>(level));
+    LogControl::instance().set_logLevel(static_cast<unsigned int>(level));
 }
 
-void set_log_format(LogFormat val) noexcept
+void set_logFormat(LogFormat val) noexcept
 {
     LogControl::instance().set_logFormat(val);
-//    m_logformat.store(static_cast<unsigned int>(mode), std::memory_order_release);    
 }
 
 bool is_logged(LogLevel level, LogControl::value_type mask) noexcept
 {
-    return (static_cast<unsigned int>(level) >= LogControl::instance().get_loglevel()) &&
-            LogControl::instance().is_set(mask);
+    return (static_cast<unsigned int>(level) >= LogControl::instance().get_logLevel()) &&
+            LogControl::instance().is_categorySet(mask);
 }
 
 } // namespace nanologger

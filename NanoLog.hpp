@@ -79,7 +79,7 @@ public:
 
     typedef std::uint64_t value_type;
     enum {
-        log_always = 1LL<<63
+        log_always = 1ULL<<63
     };
     
     static auto& instance()
@@ -88,41 +88,41 @@ public:
         return instance;
     }
     // TODO rename
-    void set(value_type val)
+    void setCategory(value_type val)
     {
         m_mask.store(val | log_always, std::memory_order_relaxed);
     }
     
     // TODO rename
-    void add(value_type val)
+    void addCategory(value_type val)
     {
         m_mask |= val;
     }
 
     // TODO rename
-    void sub(value_type val)
+    void subCategory(value_type val)
     {
         m_mask &= (~val) | log_always;
     }
 
     // TODO rename
-    value_type get() const
+    value_type getCategory() const
     {
         return m_mask.load(std::memory_order_acquire);
     }
 
     // TODO rename
-    bool is_set( value_type val ) const
+    bool is_categorySet( value_type val ) const
     {
         return m_mask.load(std::memory_order_acquire) & val;
     }
 
-    std::uint8_t get_loglevel() const
+    std::uint8_t get_logLevel() const
     {
         return m_loglevel.load(std::memory_order_acquire);
     }
     
-    void set_loglevel(std::uint8_t val) 
+    void set_logLevel(std::uint8_t val)
     {
         if(m_loglevel.load(std::memory_order_acquire) == 0xFF ) // locked 
         {
@@ -156,15 +156,15 @@ private:
 
 constexpr size_t LINEBUFFER_SIZE = 256;
 
-void set_log_level(LogLevel level) noexcept;
+void set_logLevel(LogLevel level) noexcept;
 
-void set_log_format(LogFormat format) noexcept;
+void set_logFormat(LogFormat format) noexcept;
 
-void set_log_category(LogControl::value_type mask) noexcept;
+void set_logCategory(LogControl::value_type mask) noexcept;
 
-void add_log_category(LogControl::value_type mask) noexcept;
+void add_logCategory(LogControl::value_type mask) noexcept;
 
-void sub_log_category(LogControl::value_type mask) noexcept;
+void sub_logCategory(LogControl::value_type mask) noexcept;
 
 bool is_logged(LogLevel level, LogControl::value_type mask=-1LL) noexcept;
 
