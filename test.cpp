@@ -135,6 +135,8 @@ void run_benchmark(Function && f, int thread_count)
 int main()
 {
     nanolog::initialize(nanolog::NonGuaranteedLogger(10), "/tmp/", "", 1);
+    nanolog::set_logFormat(nanolog::LogFormat::LF_NONE);
+    nanolog::set_logLevel(nanolog::LogLevel::TRACE);    
     for (auto threads : { 1, 2, 3 })
     	run_benchmark(nanolog_benchmark, threads);
 

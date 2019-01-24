@@ -143,7 +143,7 @@ public:
     
 private:
     void unlock_loglevel();   // only init can unlock it - avoid uninitialized crash
-
+    bool is_loglevel_locked() const;
     LogControl()
     : m_mask(-1LL)          // all modules enabled
     , m_loglevel(0xFF)      // disable all - locked
@@ -373,8 +373,8 @@ struct GuaranteedLogger final
  * log_file_roll_size_mb - mega bytes after which we roll to next log file.
  */
 
-void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
-void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
+bool initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
+bool initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
 
 } // namespace nanolog
 

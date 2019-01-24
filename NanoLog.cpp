@@ -37,6 +37,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <c++/7/array>
 #include <time.h>
 #include <errno.h>
+#include <mutex>
 
 // --------------------------------------------------------------------
 
@@ -94,7 +95,12 @@ void LogControl::unlock_loglevel()
 {
     m_loglevel.store(static_cast<std::uint8_t>(LogLevel::NONE), std::memory_order_release );        
 }
-    
+
+bool LogControl::is_loglevel_locked() const
+{
+    return 0xFF == m_loglevel.load(std::memory_order_acquire);
+}
+
 void set_logCategory(LogControl::value_type mask) noexcept
 {
     LogControl::instance().setCategory(mask);
@@ -936,7 +942,6 @@ public:
     , m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
-        LogControl::instance().unlock_loglevel(); // sets to NONE - hopefully nobody will change in the next microsec
     }
 
     NanoLogger(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
@@ -946,7 +951,6 @@ public:
     , m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
-        LogControl::instance().unlock_loglevel(); // sets to NONE - hopefully nobody will change in the next microsec
     }
 
     ~NanoLogger()
@@ -982,6 +986,9 @@ public:
         }
     }
 
+    static bool create(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
+    static bool create(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb);
+
 private:
     enum class State
     {
@@ -994,8 +1001,10 @@ private:
     std::unique_ptr < BufferBase > m_buffer_base;
     FileWriter m_file_writer;
     std::thread m_thread;
+    static std::mutex create_mutex;
 };
 
+std::mutex NanoLogger::create_mutex;
 std::unique_ptr < NanoLogger > nanologger;
 std::atomic < NanoLogger * > atomic_nanologger;
 
@@ -1005,22 +1014,44 @@ bool NanoLog::operator==(NanoLogLine & logline)
     return true;
 }
 
-void initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
+bool NanoLogger::create(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
 {
+    std::lock_guard<std::mutex> lkg(create_mutex);
+    if( ! LogControl::instance().is_loglevel_locked()) 
+    {
+        return false; // already init'd
+    }
     nanologger.reset(new NanoLogger(ngl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-    // init is ready - level is NONE
     LogControl::instance().set_logFormat(LogFormat::LF_ALL);
+    LogControl::instance().unlock_loglevel();
     set_logLevel(LogLevel::CRIT);
+    return true;    
 }
 
-void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
+bool NanoLogger::create(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
 {
+    std::lock_guard<std::mutex> lkg(create_mutex);
+    if( ! LogControl::instance().is_loglevel_locked()) 
+    {
+        return false; // already init'd
+    }
     nanologger.reset(new NanoLogger(gl, log_directory, log_file_name, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
-    // init is ready - level is NONE
     LogControl::instance().set_logFormat(LogFormat::LF_ALL);
+    LogControl::instance().unlock_loglevel();
     set_logLevel(LogLevel::CRIT);
+    return true;
+} 
+
+bool initialize(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
+{
+    return NanoLogger::create(ngl, log_directory, log_file_name, log_file_roll_size_mb);
+}
+
+bool initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
+{
+    return NanoLogger::create(gl, log_directory, log_file_name, log_file_roll_size_mb);
 }
 
 void set_logLevel(LogLevel level) noexcept
