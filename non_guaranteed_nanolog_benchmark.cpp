@@ -46,7 +46,10 @@ int main()
 {
     // Ring buffer size is passed as 10 mega bytes.
     // Since each log line = 256 bytes, thats 40960 slots.
-    nanolog::initialize(nanolog::NonGuaranteedLogger(1), "/tmp/", "nanolog", 1);
+    nanolog::initialize(nanolog::NonGuaranteedLogger(100), "/tmp/", "nanolog", 100);
+    nanolog::set_logLevel(nanolog::LogLevel::TRACE);
+
+    
     for (auto threads : { 1, 2, 3, 4, 5 })
     	run_benchmark(nanolog_benchmark, threads);
 

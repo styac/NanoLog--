@@ -38,7 +38,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <time.h>
 #include <errno.h>
 #include <mutex>
-
+#include <unistd.h>
 // --------------------------------------------------------------------
 
 namespace
@@ -870,7 +870,7 @@ public:
     FileWriter(std::string const & log_directory, std::string const & log_file_name, std::uint32_t log_file_roll_size_mb)
     : m_bytes_written(0)
     , m_log_file_roll_size_bytes(log_file_roll_size_mb * 1024 * 1024)
-    , m_name(log_directory + log_file_name + "_")
+    , m_name(log_directory + log_file_name + "_" + std::to_string( getpid() ) + "_" )
     , m_os()
     , m_useFile(true)
     {
